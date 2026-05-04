@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, maximum-scale=1.0">
+<title>ویدیوها</title>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body{
+  font-family:sans-serif;
+  background:#0f0f0f;
+  color:#fff;
+  padding:15px;
+}
+
+/* Header */
+.header{
+  text-align:center;
+  background:#000;
+  padding:15px;
+  position:sticky;
+  top:0;
+  z-index:10;
+}
+.logo{color:#e50914;font-weight:bold;font-size:20px;}
+
+/* --- Grid Layout: 2 videos per row --- */
+.grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  grid-gap:12px;
+}
+
+/* Card */
+.card{
+  background:#1a1a1a;
+  border-radius:12px;
+  overflow:hidden;
+  position:relative;
+
+  opacity:0;
+  transform:translateY(15px) scale(.95);
+  transition:.35s;
+}
+.card.visible{
+  opacity:1;
+  transform:translateY(0) scale(1);
+}
+
+/* Thumbnail */
+.thumb{
+  width:100%;
+  height:120px;
+  object-fit:cover;
+  display:block;
+}
+
+/* Dark gradient */
+.card::after{
+  content:"";
+  position:absolute;
+  bottom:0; left:0; right:0;
+  height:50%;
+  background:linear-gradient(to top,rgba(0,0,0,.7),transparent);
+  z-index:2;
+}
+
+/* Play button */
+.play-btn{
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  background:rgba(0,0,0,.55);
+  backdrop-filter:blur(2px);
+  position:absolute;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  z-index:5;
+}
+.play-btn::before{
+  content:"";
+  border-style:solid;
+  border-width:9px 0 9px 15px;
+  border-color:transparent transparent transparent white;
+  margin-right:-3px;
+}
+
+/* Description */
+.desc{
+  position:absolute;
+  bottom:8px;
+  right:10px;
+  color:#eee;
+  font-size:12px;
+  z-index:3;
+}
+
+/* Modal */
+.modal{
+  position:fixed;
+  top:0; left:0;
+  width:100%; height:100%;
+  background:rgba(0,0,0,.92);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  visibility:hidden;
+  opacity:0;
+  transition:.35s;
+  z-index:999;
+}
+.modal.active{
+  visibility:visible;
+  opacity:1;
+}
+.modal video{
+  width:95%;
+  border-radius:12px;
+}
+.close-btn{
+  position:absolute;
+  top:15px; right:15px;
+  font-size:30px;
+  cursor:pointer;
+  color:#fff;
+}
+
+/* Responsive upgrades */
+@media(min-width:480px){
+  .thumb{height:150px;}
+}
+@media(min-width:768px){
+  .grid{
+    grid-template-columns:repeat(3,1fr);
+  }
+  .thumb{height:170px;}
+}
+</style>
+</head>
+<body>
+
+<div class="header"><div class="logo">VIDEO MOBILE</div></div>
+<h3 style="margin:15px 0 10px;">ویدیوها</h3>
+
+<div id="grid" class="grid"></div>
+
+<!-- Modal -->
+<div id="modal" class="modal">
+  <span class="close-btn" onclick="closeModal()">×</span>
+  <video id="modalVideo" controls></video>
+</div>
+
+<script>
+/* Load JSON */
+async function loadVideos(){
+  const res = await fetch("videos.json");
+  const items = await res.json();
+  const grid = document.querySelector("#grid");
+
+  items.forEach(item=>{
+    const card = document.createElement("div");
+    card.className="card";
+    card.innerHTML = `
+      <img class="thumb" data-video="${item.video}">
+      <div class="play-btn"></div>
+      <div class="desc">${item.description}</div>
+    `;
+    card.addEventListener("click",()=>openModal(item.video));
+    grid.appendChild(card);
+  });
+
+  animateCards();
+  startLazyThumb();
+}
+
+/* Lazy Load Thumbnails */
+function startLazyThumb(){
+  const thumbs=document.querySelectorAll(".thumb");
+  const obs=new IntersectionObserver((entries,observer)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){
+        generateThumb(entry.target);
+        observer.unobserve(entry.target);
+      }
+    });
+  },{threshold:.3});
+  thumbs.forEach(t=>obs.observe(t));
+}
+
+function generateThumb(img){
+  const src=img.dataset.video;
+  const v=document.createElement("video");
+  v.src=src; v.muted=true; v.crossOrigin="anonymous"; v.preload="auto";
+  v.currentTime=0.1;
+
+  v.addEventListener("loadeddata",()=>{
+    if(v.currentTime<0.2) v.currentTime=0.5;
+    v.addEventListener("seeked",()=>{
+      const canvas=document.createElement("canvas");
+      canvas.width=v.videoWidth; canvas.height=v.videoHeight;
+      const ctx=canvas.getContext("2d");
+      ctx.drawImage(v,0,0);
+      try{
+        img.src=canvas.toDataURL("image/jpeg");
+      }catch(e){
+        img.src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48rectIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjMzMzIi8+PC9zdmc+";
+      }
+    },{once:true});
+  });
+}
+
+/* Animate cards on view */
+function animateCards(){
+  const cards=document.querySelectorAll(".card");
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting) e.target.classList.add("visible");
+    });
+  },{threshold:.3});
+  cards.forEach(c=>obs.observe(c));
+}
+
+/* Modal controls */
+function openModal(src){
+  const modal=document.getElementById("modal");
+  const v=document.getElementById("modalVideo");
+  v.src=src;
+  modal.classList.add("active");
+  v.play();
+}
+function closeModal(){
+  const modal=document.getElementById("modal");
+  const v=document.getElementById("modalVideo");
+  v.pause();
+  modal.classList.remove("active");
+}
+
+loadVideos();
+</script>
+</body>
+</html>
